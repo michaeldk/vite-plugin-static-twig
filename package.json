@@ -1,0 +1,44 @@
+{
+    "name": "vite-plugin-static-twig",
+    "version": "1.0.0",
+    "description": "Vite plugin that renders Twig templates into static HTML pages, with dev-server HMR and multi-locale support.",
+    "type": "module",
+    "main": "./src/index.js",
+    "exports": {
+        ".": "./src/index.js"
+    },
+    "files": [
+        "src"
+    ],
+    "keywords": [
+        "vite",
+        "vite-plugin",
+        "twig",
+        "static-site",
+        "html",
+        "i18n"
+    ],
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/michaeldk/vite-plugin-static-twig.git"
+    },
+    "bugs": {
+        "url": "https://github.com/michaeldk/vite-plugin-static-twig/issues"
+    },
+    "homepage": "https://github.com/michaeldk/vite-plugin-static-twig#readme",
+    "engines": {
+        "node": ">=18"
+    },
+    "dependencies": {
+        "twig": "^1.17.1"
+    },
+    "peerDependencies": {
+        "vite": ">=4"
+    },
+    "peerDependenciesMeta": {
+        "vite": {
+            "optional": false
+        }
+    }
+}
