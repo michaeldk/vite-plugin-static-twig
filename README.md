@@ -63,9 +63,10 @@ All options are optional and fall back to sensible defaults.
 | `translationsDir` | `string` | `'src/translations'` | Directory containing JSON translation files. Must include `global.json` plus one file per locale (e.g. `en.json`). |
 | `slugMapPath` | `string` | `'src/js/json/translations.json'` | Project-relative path to a JSON slug translation map used to build language-switcher `href` values at build time. Set to `null` to disable. |
 | `useViteAssetsInBuild` | `boolean` | `true` | When `true`, reads the Vite manifest and injects hashed JS/CSS paths into every rendered page. |
-| `locales` | `string[]` | `['fr','en','nl','de']` | Locale codes recognised in directory names. The locale is inferred by finding one of these as a path segment. |
-| `defaultLocale` | `string` | `'fr'` | Fallback locale used when none of the `locales` are found in the file path. |
+| `locales` | `string[]` | `['fr','en','nl','de']` | Locale codes recognised in directory names. The locale is inferred by finding one of these as a path segment. Pass `[]` for non-localised sites. |
+| `defaultLocale` | `string` | `'fr'` | Fallback locale used when none of the `locales` are found in the file path. Also used for pages placed at the root of `staticDir`. |
 | `scriptsEntryKey` | `string` | `'src/js/scripts.js'` | The Vite manifest key for the JS entry point. Used to look up the hashed JS and CSS filenames. |
+| `filters` | `Array<{ name: string, fn: Function }>` | `[]` | Additional Twig filters to register alongside the built-ins. Each entry is passed directly to `Twig.extendFilter(name, fn)`. |
 
 ---
 
@@ -135,6 +136,48 @@ Encodes `mailto:` and `tel:` link `href` values and their visible text as HTML c
 ```twig
 {{ content|entity_encode }}
 ```
+
+### Registering additional filters
+
+Pass a `filters` array to the plugin to register your own filters alongside the built-ins.
+
+```js
+// vite.config.js
+import staticPagesPlugin from 'vite-plugin-static-twig';
+
+export default {
+    plugins: [
+        staticPagesPlugin({
+            filters: [
+                { name: 'uppercase', fn: (value) => value?.toUpperCase() ?? value },
+                { name: 'prefix',    fn: (value, [pfx = '']) => `${pfx}${value}` }
+            ]
+        })
+    ]
+};
+```
+
+Filter functions can also be imported from a separate file to keep `vite.config.js` tidy:
+
+```js
+// src/twig-filters.js
+export const filters = [
+    { name: 'uppercase', fn: (value) => value?.toUpperCase() ?? value },
+    { name: 'prefix',    fn: (value, [pfx = '']) => `${pfx}${value}` }
+];
+```
+
+```js
+// vite.config.js
+import { filters } from './src/twig-filters.js';
+import staticPagesPlugin from 'vite-plugin-static-twig';
+
+export default {
+    plugins: [staticPagesPlugin({ filters })]
+};
+```
+
+Each `fn` receives the filtered value as its first argument and an array of filter arguments as its second, matching the signature expected by `Twig.extendFilter`.
 
 ---
 
