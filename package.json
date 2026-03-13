@@ -3,13 +3,22 @@
     "version": "1.0.0",
     "description": "Vite plugin that renders Twig templates into static HTML pages, with dev-server HMR and multi-locale support.",
     "type": "module",
-    "main": "./src/index.js",
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
     "exports": {
-        ".": "./src/index.js"
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        }
     },
     "files": [
-        "src"
+        "dist"
     ],
+    "scripts": {
+        "build": "tsup",
+        "typecheck": "tsc --noEmit"
+    },
     "keywords": [
         "vite",
         "vite-plugin",
@@ -40,5 +49,10 @@
         "vite": {
             "optional": false
         }
+    },
+    "devDependencies": {
+        "@types/node": "^25.5.0",
+        "tsup": "^8.5.1",
+        "typescript": "^5.9.3"
     }
 }

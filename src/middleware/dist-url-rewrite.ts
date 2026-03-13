@@ -1,5 +1,26 @@
 import fs from 'fs';
 import path from 'path';
+import type { ViteDevServer } from 'vite';
+import type { IncomingMessage, ServerResponse } from 'http';
+
+export interface DistUrlRewriteOptions {
+    projectRoot: string;
+    outDir: string;
+    watcher: ViteDevServer['watcher'];
+}
+
+type NextFunction = (err?: unknown) => void;
+type ConnectMiddleware = (req: IncomingMessage, res: ServerResponse, next: NextFunction) => Promise<void>;
+
+interface StatCacheEntry {
+    isFile: boolean;
+    expiresAt: number;
+}
+
+interface ResolutionCacheEntry {
+    value: string | null;
+    expiresAt: number;
+}
 
 /**
  * Creates a Connect-compatible middleware that rewrites incoming request URLs
@@ -13,32 +34,22 @@ import path from 'path';
  * URL resolution is cached with a short TTL and invalidated whenever the file
  * watcher reports a change inside `outDir`. Vite-internal paths (`/@vite`,
  * `/@fs`, etc.) are always bypassed without touching the cache.
- *
- * @param {object} options
- * @param {string} options.projectRoot - Absolute path to the project root.
- * @param {string} options.outDir      - Absolute path to the Vite output directory.
- * @param {import('chokidar').FSWatcher} options.watcher - Vite's file watcher instance.
- * @returns {import('connect').HandleFunction} Express/Connect middleware function.
  */
-function createDistUrlRewrite(options) {
+function createDistUrlRewrite(options: DistUrlRewriteOptions): ConnectMiddleware {
     const { projectRoot, outDir, watcher } = options;
     const STAT_CACHE_TTL_MS = 1000;
     const RESOLUTION_CACHE_TTL_MS = 1000;
     const MAX_CACHE_ENTRIES = 1024;
-    const fileStatCache = new Map();
-    const resolutionCache = new Map();
-    const inFlightResolution = new Map();
+    const fileStatCache = new Map<string, StatCacheEntry>();
+    const resolutionCache = new Map<string, ResolutionCacheEntry>();
+    const inFlightResolution = new Map<string, Promise<string | null>>();
     const distBasePath = getDistPublicBasePath();
 
     /**
      * Returns the URL base path under which the output directory is served,
      * expressed as an absolute-style path string (e.g. `'/dist'` or `'/'`).
-     * Used to construct rewritten URLs and to skip requests that already point
-     * into the output directory.
-     *
-     * @returns {string}
      */
-    function getDistPublicBasePath() {
+    function getDistPublicBasePath(): string {
         const relativeOutDir = path.relative(projectRoot, outDir).split(path.sep).join('/');
         return relativeOutDir ? `/${relativeOutDir}` : '/';
     }
@@ -46,10 +57,8 @@ function createDistUrlRewrite(options) {
     /**
      * Evicts the oldest entry from `map` if it has reached `MAX_CACHE_ENTRIES`.
      * Keeps memory usage bounded without a full flush.
-     *
-     * @param {Map} map
      */
-    function trimCache(map) {
+    function trimCache<K, V>(map: Map<K, V>): void {
         if (map.size < MAX_CACHE_ENTRIES) {
             return;
         }
@@ -61,17 +70,16 @@ function createDistUrlRewrite(options) {
 
     /**
      * Clears all caches (file-stat, resolution, and in-flight).
-     * Called by the watcher when a file inside `outDir` changes, ensuring
-     * stale entries are not served after a re-render.
+     * Called by the watcher when a file inside `outDir` changes.
      */
-    function clearCaches() {
+    function clearCaches(): void {
         fileStatCache.clear();
         resolutionCache.clear();
         inFlightResolution.clear();
     }
 
     if (watcher && typeof watcher.on === 'function') {
-        const invalidateOnSourceChange = (filePath) => {
+        const invalidateOnSourceChange = (filePath: string): void => {
             const absolutePath = path.resolve(projectRoot, filePath);
             if (isWithinOutDir(absolutePath)) {
                 clearCaches();
@@ -85,11 +93,8 @@ function createDistUrlRewrite(options) {
     /**
      * Returns true if `absPath` is equal to, or nested inside, the resolved
      * output directory. Used to guard against path-traversal candidates.
-     *
-     * @param {string} absPath - Absolute path to check.
-     * @returns {boolean}
      */
-    function isWithinOutDir(absPath) {
+    function isWithinOutDir(absPath: string): boolean {
         const normalizedOutDir = path.resolve(outDir);
         const normalizedTarget = path.resolve(absPath);
         return (
@@ -100,16 +105,9 @@ function createDistUrlRewrite(options) {
 
     /**
      * Produces an ordered list of candidate file paths (relative to `outDir`)
-     * that could satisfy a given URL pathname. Resolution order:
-     * - `/`            → `index.html`
-     * - `/foo/`        → `foo/index.html`
-     * - `/foo.ext`     → `foo.ext`  (has extension — only one candidate)
-     * - `/foo`         → `foo`, `foo.html`, `foo/index.html`
-     *
-     * @param {string} pathname - URL pathname (e.g. `/fr/about`).
-     * @returns {string[]} Ordered candidates, relative to `outDir`.
+     * that could satisfy a given URL pathname.
      */
-    function buildDistCandidates(pathname) {
+    function buildDistCandidates(pathname: string): string[] {
         const cleaned = pathname.replace(/^\/+/, '');
         if (!cleaned) {
             return ['index.html'];
@@ -129,11 +127,8 @@ function createDistUrlRewrite(options) {
     /**
      * Checks whether `candidatePath` points to an existing file, with results
      * cached for `STAT_CACHE_TTL_MS` milliseconds to avoid repeated syscalls.
-     *
-     * @param {string} candidatePath - Absolute path to check.
-     * @returns {Promise<boolean>}
      */
-    async function isExistingFile(candidatePath) {
+    async function isExistingFile(candidatePath: string): Promise<boolean> {
         const now = Date.now();
         const cached = fileStatCache.get(candidatePath);
         if (cached && cached.expiresAt > now) {
@@ -145,7 +140,8 @@ function createDistUrlRewrite(options) {
             const stat = await fs.promises.stat(candidatePath);
             isFile = stat.isFile();
         } catch (error) {
-            if (error && error.code !== 'ENOENT' && error.code !== 'ENOTDIR') {
+            const nodeError = error as NodeJS.ErrnoException;
+            if (nodeError?.code !== 'ENOENT' && nodeError?.code !== 'ENOTDIR') {
                 throw error;
             }
         }
@@ -163,24 +159,21 @@ function createDistUrlRewrite(options) {
      * by trying the candidates returned by `buildDistCandidates` in order.
      *
      * Results are cached for `RESOLUTION_CACHE_TTL_MS` milliseconds.
-     * Concurrent calls for the same pathname share a single in-flight promise
-     * to prevent duplicate filesystem lookups.
-     *
-     * @param {string} pathname - URL pathname to resolve (e.g. `/fr/about`).
-     * @returns {Promise<string|null>} Relative path inside `outDir`, or `null` if not found.
+     * Concurrent calls for the same pathname share a single in-flight promise.
      */
-    async function resolveExistingDistPath(pathname) {
+    async function resolveExistingDistPath(pathname: string): Promise<string | null> {
         const now = Date.now();
         const cached = resolutionCache.get(pathname);
         if (cached && cached.expiresAt > now) {
             return cached.value;
         }
 
-        if (inFlightResolution.has(pathname)) {
-            return inFlightResolution.get(pathname);
+        const inflight = inFlightResolution.get(pathname);
+        if (inflight) {
+            return inflight;
         }
 
-        const resolutionPromise = (async () => {
+        const resolutionPromise = (async (): Promise<string | null> => {
             const candidates = buildDistCandidates(pathname);
             for (const candidate of candidates) {
                 const candidatePath = path.resolve(outDir, candidate);
@@ -216,20 +209,13 @@ function createDistUrlRewrite(options) {
     /**
      * Connect middleware. Rewrites `req.url` for GET/HEAD requests whose
      * pathname maps to an existing file in `outDir`, then calls `next()`.
-     * Passes through unchanged for Vite-internal paths, unresolvable paths,
-     * and non-GET/HEAD methods.
-     *
-     * @param {import('http').IncomingMessage} req
-     * @param {import('http').ServerResponse}  res
-     * @param {Function} next
-     * @returns {Promise<void>}
      */
-    return async function distUrlRewriteMiddleware(req, res, next) {
+    return async function distUrlRewriteMiddleware(req, _res, next) {
         if (!req.url || (req.method !== 'GET' && req.method !== 'HEAD')) {
             return next();
         }
 
-        let parsed;
+        let parsed: URL;
         try {
             parsed = new URL(req.url, 'http://localhost');
         } catch (_error) {

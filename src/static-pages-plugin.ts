@@ -1,7 +1,37 @@
 import path from 'path';
+import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
 import { createSiteUtils } from './site-utils.js';
 import { createTwigPagesTask } from './tasks/twig-pages.js';
 import { createDistUrlRewrite } from './middleware/dist-url-rewrite.js';
+import type { TwigFilter, RenderContext } from './tasks/twig-pages.js';
+
+export interface StaticPagesPluginOptions {
+    /** Root source directory. @default 'src' */
+    srcDir?: string;
+    /** Directory containing Twig page entry files. Files prefixed with `_` are skipped. @default 'src/templates/pages' */
+    staticDir?: string;
+    /** Shared Twig templates directory (layouts, partials, macros). @default 'src/templates' */
+    templatesDir?: string;
+    /** Directory containing JSON translation files. @default 'src/translations' */
+    translationsDir?: string;
+    /** Project-relative path to the JSON slug translation map. Set to `null` to disable. @default 'src/js/json/translations.json' */
+    slugMapPath?: string | null;
+    /** When `true`, reads the Vite manifest and injects hashed JS/CSS paths into every rendered page. @default true */
+    useViteAssetsInBuild?: boolean;
+    /** Locale codes recognised in directory names. Pass `[]` for non-localised sites. @default ['fr','en','nl','de'] */
+    locales?: string[];
+    /** Fallback locale used when none of the `locales` are found in the file path. @default 'fr' */
+    defaultLocale?: string;
+    /** The Vite manifest key for the JS entry point. @default 'src/js/scripts.js' */
+    scriptsEntryKey?: string;
+    /** Additional Twig filters to register alongside the built-ins. Each entry is `{ name, fn }`. @default [] */
+    filters?: TwigFilter[];
+}
+
+interface Tasks {
+    utils: ReturnType<typeof createSiteUtils>;
+    twigPagesTask: ReturnType<typeof createTwigPagesTask>;
+}
 
 /**
  * Vite plugin that renders Twig templates into static HTML pages during both
@@ -10,21 +40,8 @@ import { createDistUrlRewrite } from './middleware/dist-url-rewrite.js';
  * In dev mode the plugin watches the source directories and triggers a full
  * browser reload whenever a relevant file changes, using a render-coalescing
  * strategy to avoid concurrent renders.
- *
- * @param {object}   [options]
- * @param {string}   [options.srcDir='src']                                  - Root source directory.
- * @param {string}   [options.staticDir='src/templates/pages']               - Twig page entry files.
- * @param {string}   [options.templatesDir='src/templates']                  - Shared Twig templates.
- * @param {string}   [options.translationsDir='src/translations']            - JSON translation files.
- * @param {string}   [options.slugMapPath='src/js/json/translations.json']   - URL slug translation map used to build lang-switcher hrefs at build time.
- * @param {boolean}  [options.useViteAssetsInBuild=true]                     - Inject Vite manifest assets into rendered HTML.
- * @param {string[]} [options.locales=['fr','en','nl','de']]                  - Locale codes to detect from directory names.
- * @param {string}   [options.defaultLocale='fr']                            - Fallback locale when none is detected from the path.
- * @param {string}   [options.scriptsEntryKey='src/js/scripts.js']           - Vite manifest key for the JS/CSS entry point.
- * @param {Array<{name:string, fn:Function}>} [options.filters=[]]          - Additional Twig filters to register. Each entry is `{ name, fn }` passed directly to `Twig.extendFilter`.
- * @returns {import('vite').Plugin}
  */
-function staticPagesPlugin(options = {}) {
+function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
     const {
         srcDir = 'src',
         staticDir = 'src/templates/pages',
@@ -38,10 +55,10 @@ function staticPagesPlugin(options = {}) {
         filters = []
     } = options;
 
-    let config;
-    let projectRoot;
-    let devServer = null;
-    let tasks = null;
+    let config: ResolvedConfig;
+    let projectRoot: string;
+    let devServer: ViteDevServer | null = null;
+    let tasks: Tasks | null = null;
 
     // Render coalescing: if a file changes while a render is already running,
     // we don't start a second concurrent render. Instead we set rerenderQueued=true
@@ -53,10 +70,8 @@ function staticPagesPlugin(options = {}) {
     /**
      * Instantiates the utility helpers and the Twig render task, bound to the
      * resolved Vite config. Called once inside `configResolved`.
-     *
-     * @returns {{ utils: object, twigPagesTask: object }}
      */
-    function buildTasks() {
+    function buildTasks(): Tasks {
         const utils = createSiteUtils(projectRoot);
         const twigPagesTask = createTwigPagesTask({
             srcDir,
@@ -76,21 +91,14 @@ function staticPagesPlugin(options = {}) {
             loadJson: utils.loadJson
         });
 
-        return {
-            utils,
-            twigPagesTask
-        };
+        return { utils, twigPagesTask };
     }
 
     /**
      * Returns true if `absPath` is inside any of the three watched source
      * directories (static pages, templates, or translations).
-     * Does **not** filter by file extension.
-     *
-     * @param {string} absPath - Absolute path to check.
-     * @returns {boolean}
      */
-    function isInWatchedDirectory(absPath) {
+    function isInWatchedDirectory(absPath: string): boolean {
         const relativePath = path.relative(projectRoot, absPath);
         if (relativePath.startsWith('..')) {
             return false;
@@ -113,19 +121,16 @@ function staticPagesPlugin(options = {}) {
     /**
      * Registers every source file in the watched directories with Vite's watcher
      * so that `hotUpdate` is triggered when they change. Only called in dev mode.
-     *
-     * @param {import('vite').BuildContext} ctx - The Vite `buildStart` hook context.
-     * @returns {Promise<void>}
      */
-    async function addWatchFiles(ctx) {
+    async function addWatchFiles(ctx: { addWatchFile: (id: string) => void }): Promise<void> {
         const staticRoot = path.join(projectRoot, staticDir);
         const templatesRoot = path.join(projectRoot, templatesDir);
         const translationsRoot = path.join(projectRoot, translationsDir);
 
         const [staticFiles, templateFiles, translationFiles] = await Promise.all([
-            tasks.utils.walkFiles(staticRoot),
-            tasks.utils.walkFiles(templatesRoot),
-            tasks.utils.walkFiles(translationsRoot)
+            tasks!.utils.walkFiles(staticRoot),
+            tasks!.utils.walkFiles(templatesRoot),
+            tasks!.utils.walkFiles(translationsRoot)
         ]);
 
         const twigFiles = staticFiles.filter((filePath) => path.extname(filePath).toLowerCase() === '.twig');
@@ -138,10 +143,8 @@ function staticPagesPlugin(options = {}) {
     /**
      * Builds the context object passed to `twigPagesTask.renderTwigPages`,
      * derived from the current Vite command (`serve` vs `build`).
-     *
-     * @returns {{ isBuild: boolean, useViteDevServer: boolean, viteDevBase: string }}
      */
-    function createRenderContext() {
+    function createRenderContext(): RenderContext {
         return {
             isBuild: config.command === 'build',
             useViteDevServer: config.command === 'serve',
@@ -152,9 +155,8 @@ function staticPagesPlugin(options = {}) {
     /**
      * Triggers a Twig re-render. Calls made while a render is already in progress
      * are coalesced — the render loop processes them in sequence, never in parallel.
-     * @param {boolean} fullReload - Whether to send a full browser reload after rendering.
      */
-    async function renderTwigPages(fullReload = false) {
+    async function renderTwigPages(fullReload = false): Promise<void> {
         rerenderQueued = true;
         fullReloadQueued ||= fullReload;
         if (isRendering) {
@@ -168,7 +170,7 @@ function staticPagesPlugin(options = {}) {
                 rerenderQueued = false;
                 fullReloadQueued = false;
 
-                await tasks.twigPagesTask.renderTwigPages(createRenderContext());
+                await tasks!.twigPagesTask.renderTwigPages(createRenderContext());
                 if (shouldReload && devServer) {
                     devServer.ws.send({ type: 'full-reload' });
                 }
@@ -182,19 +184,8 @@ function staticPagesPlugin(options = {}) {
 
     /**
      * Determines whether a changed file should trigger a full Twig re-render.
-     *
-     * Returns `true` when the file is:
-     * - a `.twig` file inside any watched directory, OR
-     * - any file inside the templates or translations directories (changing a
-     *   layout or a translation string always invalidates every page).
-     *
-     * Returns `false` for paths outside the watched directories or for unrelated
-     * file types (e.g. static images inside the pages tree).
-     *
-     * @param {string} filePath - Absolute or project-relative path of the changed file.
-     * @returns {boolean}
      */
-    function needsRerender(filePath) {
+    function needsRerender(filePath: string): boolean {
         const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(projectRoot, filePath);
 
         if (slugMapPath && absolutePath === path.resolve(projectRoot, slugMapPath)) {
@@ -233,7 +224,7 @@ function staticPagesPlugin(options = {}) {
             }
         },
         async closeBundle() {
-            await tasks.twigPagesTask.renderTwigPages(createRenderContext());
+            await tasks!.twigPagesTask.renderTwigPages(createRenderContext());
             console.log('Twig pages generated in output directory.');
         },
         async configureServer(server) {

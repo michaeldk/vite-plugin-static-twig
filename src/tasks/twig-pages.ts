@@ -1,6 +1,48 @@
 import fs from 'fs';
 import path from 'path';
 import Twig from 'twig';
+import type { SiteUtils } from '../site-utils.js';
+
+export type TwigFilterFn = (value: unknown, args: unknown[] | false) => unknown;
+
+export interface TwigFilter {
+    name: string;
+    fn: TwigFilterFn;
+}
+
+export interface RenderContext {
+    isBuild: boolean;
+    useViteDevServer: boolean;
+    viteDevBase: string;
+}
+
+export interface TwigPagesOptions {
+    srcDir: string;
+    staticDir: string;
+    templatesDir: string;
+    translationsDir: string;
+    slugMapPath?: string | null;
+    useViteAssetsInBuild: boolean;
+    locales?: string[];
+    defaultLocale?: string;
+    scriptsEntryKey?: string;
+    filters?: TwigFilter[];
+    projectRoot: string;
+    outDir: string;
+    walkFiles: SiteUtils['walkFiles'];
+    ensureDir: SiteUtils['ensureDir'];
+    loadJson: SiteUtils['loadJson'];
+}
+
+interface ViteManifestEntry {
+    file?: string;
+    css?: string[];
+    [key: string]: unknown;
+}
+
+type ViteManifest = Record<string, ViteManifestEntry>;
+
+type SlugMap = Record<string, string[]>;
 
 /**
  * Creates a task that renders Twig page templates into static HTML files.
@@ -9,28 +51,10 @@ import Twig from 'twig';
  * is treated as a page entry. Language is inferred from the directory structure,
  * translations are loaded per language, and asset paths are made relative to
  * each output file's location.
- *
- * @param {object}   options
- * @param {string}   options.srcDir               - Root source directory.
- * @param {string}   options.staticDir            - Directory containing Twig page entries.
- * @param {string}   options.templatesDir         - Shared Twig templates directory.
- * @param {string}   options.translationsDir      - Directory containing JSON translation files.
- * @param {string}   [options.slugMapPath]        - Project-relative path to the URL slug translation map (JSON).
- * @param {boolean}  options.useViteAssetsInBuild - Whether to inject Vite manifest assets.
- * @param {string[]} [options.locales]            - List of locale codes to detect from directory names. Defaults to `['fr','en','nl','de']`.
- * @param {string}   [options.defaultLocale]      - Locale used when none is detected from the path. Defaults to `'fr'`.
- * @param {string}   [options.scriptsEntryKey]    - Vite manifest key for the JS entry point. Defaults to `'src/js/scripts.js'`.
- * @param {string}   options.projectRoot          - Absolute project root path.
- * @param {string}   options.outDir               - Absolute output directory path.
- * @param {Function} options.walkFiles            - Async function to list files recursively.
- * @param {Function} options.ensureDir            - Async function to create a directory tree.
- * @param {Function} options.loadJson             - Async function to load a JSON file safely.
- * @param {Array<{name:string, fn:Function}>} [options.filters=[]] - Additional Twig filters to register alongside the built-ins.
- * @returns {{ renderTwigPages: Function }}
  */
-function createTwigPagesTask(options) {
+function createTwigPagesTask(options: TwigPagesOptions): { renderTwigPages: (context: RenderContext) => Promise<void> } {
     const {
-        srcDir,
+        srcDir: _srcDir,
         staticDir,
         templatesDir,
         translationsDir,
@@ -53,11 +77,8 @@ function createTwigPagesTask(options) {
      * Infers the locale from a file path by looking for a language-code segment
      * matching one of the configured `locales`. Defaults to `defaultLocale` if
      * none is found.
-     *
-     * @param {string} filePath - Absolute or relative path to the Twig file.
-     * @returns {string}
      */
-    function detectLanguage(filePath) {
+    function detectLanguage(filePath: string): string {
         const match = filePath.match(localePattern);
         return match ? match[1] : defaultLocale;
     }
@@ -66,13 +87,8 @@ function createTwigPagesTask(options) {
      * Calculates the relative path prefix needed to reach the asset root from
      * the output HTML file's location (e.g. `'../../'` for a file two levels deep).
      * Returns an empty string for files at the root of the output directory.
-     *
-     * @param {string} filePath    - Absolute path to the source `.twig` file.
-     * @param {string} staticRoot  - Absolute path to the static pages root.
-     * @param {string} outputRoot  - Absolute path to the build output directory.
-     * @returns {string} Relative prefix ending with `/`, or empty string.
      */
-    function calculateAssetPath(filePath, staticRoot, outputRoot) {
+    function calculateAssetPath(filePath: string, staticRoot: string, outputRoot: string): string {
         const outputPath = filePath.replace(/\.twig$/, '.html').replace(staticRoot, outputRoot);
         const relativePath = path.relative(outputRoot, outputPath);
         const dirname = path.dirname(relativePath);
@@ -84,29 +100,19 @@ function createTwigPagesTask(options) {
      * Builds a map of `{ targetLang: relativeUrl }` for the language-switcher
      * links of a given page, resolved at build time from the slug translation map.
      *
-     * For example, for `de/unbefristete-kombinierte-erlaubnis.html` it returns:
-     * ```
-     * {
-     *   nl: '../nl/gecombineerde-vergunning-onbepaalde-duur.html',
-     *   fr: '../fr/permis-unique-a-duree-illimitee.html',
-     *   en: '../en/permanent-single-permit.html'
-     * }
-     * ```
-     *
      * Returns an empty object when the page has no translatable lang prefix or
      * when any slug cannot be found in the map.
-     *
-     * @param {string} outputRelative - Relative output path, e.g. `de/page.html`.
-     * @param {string} lang           - Current page locale, e.g. `'de'`.
-     * @param {object} slugMap        - Parsed slug translation map (translations.json).
-     * @param {string} assetPath      - Relative prefix back to the output root (e.g. `'../'`).
-     * @returns {Record<string, string>}
      */
-    function buildLangSwitcherUrls(outputRelative, lang, slugMap, assetPath) {
+    function buildLangSwitcherUrls(
+        outputRelative: string,
+        lang: string,
+        slugMap: SlugMap,
+        assetPath: string
+    ): Record<string, string> {
         const normalized = outputRelative.split(path.sep).join('/');
         const langPrefix = `${lang}/`;
 
-        if (!normalized.startsWith(langPrefix) || !slugMap?.[lang]) return {};
+        if (!normalized.startsWith(langPrefix) || !slugMap[lang]) return {};
 
         const slugs = normalized
             .slice(langPrefix.length)
@@ -117,11 +123,11 @@ function createTwigPagesTask(options) {
         const indices = slugs.map(slug => slugMap[lang].indexOf(slug));
         if (indices.some(i => i === -1)) return {};
 
-        const urls = {};
+        const urls: Record<string, string> = {};
         for (const targetLang of Object.keys(slugMap)) {
             if (targetLang === lang || !slugMap[targetLang]) continue;
 
-            const translatedSlugs = indices.map(i => slugMap[targetLang][i]);
+            const translatedSlugs = indices.map(i => (slugMap[targetLang] as string[])[i]);
             if (translatedSlugs.some(s => !s)) continue;
 
             urls[targetLang] = `${assetPath}${targetLang}/${translatedSlugs.join('/')}.html`;
@@ -134,13 +140,12 @@ function createTwigPagesTask(options) {
      * Resolves a Vite manifest entry by trying `preferredKeys` first, then
      * falling back to a predicate scan of all entries. Returns `undefined` if
      * nothing matches.
-     *
-     * @param {object}   manifest         - Parsed `.vite/manifest.json`.
-     * @param {string[]} preferredKeys    - Manifest keys to check in order of preference.
-     * @param {Function} fallbackMatcher  - `(key, value) => boolean` used when no preferred key matches.
-     * @returns {object|undefined} The matched manifest entry, or `undefined`.
      */
-    function getViteManifestEntry(manifest, preferredKeys, fallbackMatcher) {
+    function getViteManifestEntry(
+        manifest: ViteManifest,
+        preferredKeys: string[],
+        fallbackMatcher: (key: string, value: ViteManifestEntry) => boolean
+    ): ViteManifestEntry | undefined {
         for (const key of preferredKeys) {
             if (manifest[key]) {
                 return manifest[key];
@@ -152,28 +157,26 @@ function createTwigPagesTask(options) {
     /**
      * Reads the Vite build manifest and extracts the hashed JS and CSS asset
      * paths for the main `scripts` entry point.
-     * Returns `{ js: '', css: '' }` when the manifest does not exist (dev mode).
-     *
-     * @returns {Promise<{ js: string, css: string }>}
+     * Returns `{}` when the manifest does not exist (dev mode).
      */
-    async function loadViteAssets() {
+    async function loadViteAssets(): Promise<{ js?: string; css?: string }> {
         const manifestPath = path.join(outDir, '.vite', 'manifest.json');
         if (!fs.existsSync(manifestPath)) {
             return {};
         }
 
-        const manifest = JSON.parse(await fs.promises.readFile(manifestPath, 'utf8'));
+        const manifest = JSON.parse(await fs.promises.readFile(manifestPath, 'utf8')) as ViteManifest;
         const entryBasename = path.basename(scriptsEntryKey);
         const entryStem = path.basename(scriptsEntryKey, path.extname(scriptsEntryKey));
         const scriptsEntry = getViteManifestEntry(
             manifest,
             [scriptsEntryKey, entryStem],
-            (key, value) => key.endsWith(entryBasename) || String(value?.file || '').includes(entryStem)
+            (key, value) => key.endsWith(entryBasename) || String(value?.file ?? '').includes(entryStem)
         );
 
         return {
-            js: scriptsEntry?.file || '',
-            css: scriptsEntry?.css?.[0] || ''
+            js: scriptsEntry?.file ?? '',
+            css: scriptsEntry?.css?.[0] ?? ''
         };
     }
 
@@ -187,11 +190,12 @@ function createTwigPagesTask(options) {
      *
      * Safe to call multiple times; Twig silently overwrites existing filters.
      */
-    function registerTwigFilters() {
-        Twig.extendFilter('external_links', function(value, lang = 'fr') {
+    function registerTwigFilters(): void {
+        Twig.extendFilter('external_links', function(value: unknown, args: unknown[] | false) {
+            const lang = Array.isArray(args) ? (args[0] as string) ?? 'fr' : 'fr';
             if (!value || typeof value !== 'string') return value;
 
-            const externalLabels = {
+            const externalLabels: Record<string, string> = {
                 fr: 'Nouvelle fenêtre',
                 nl: 'Nieuw venster',
                 de: 'neues Fenster',
@@ -199,10 +203,10 @@ function createTwigPagesTask(options) {
             };
 
             const fileExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'pptx', 'zip'];
-            const label = externalLabels[lang] || externalLabels.fr;
+            const label = externalLabels[lang] ?? externalLabels['fr'];
 
-            return value.replace(/<a([^>]*)>(.*?)<\/a>/gis, (match, attrs, text) => {
-                const hrefMatch = attrs.match(/href\s*=\s*["']([^"']+)["']/i);
+            return value.replace(/<a([^>]*)>(.*?)<\/a>/gis, (match, attrs: string, text: string) => {
+                const hrefMatch = (attrs as string).match(/href\s*=\s*["']([^"']+)["']/i);
                 if (!hrefMatch) return match;
 
                 const href = hrefMatch[1];
@@ -210,7 +214,7 @@ function createTwigPagesTask(options) {
                     return match;
                 }
 
-                const ext = href.split('?')[0].split('.').pop().toLowerCase();
+                const ext = href.split('?')[0].split('.').pop()!.toLowerCase();
                 const isDownload = fileExtensions.includes(ext);
                 const isExternal = /^(https?:\/\/|www\.)/i.test(href);
 
@@ -233,10 +237,10 @@ function createTwigPagesTask(options) {
             });
         });
 
-        Twig.extendFilter('entity_encode', function(value) {
+        Twig.extendFilter('entity_encode', function(value: unknown) {
             if (!value || typeof value !== 'string') return value;
 
-            const encode = (str) =>
+            const encode = (str: string): string =>
                 str
                     .split('')
                     .map((char) => `&#${char.charCodeAt(0)};`)
@@ -244,13 +248,13 @@ function createTwigPagesTask(options) {
 
             return value.replace(
                 /<a\s([^>]*)>(.*?)<\/a>/gis,
-                (match, attrs, text) => {
+                (match, attrs: string, text: string) => {
                     const hrefMatch = attrs.match(/href\s*=\s*["']((?:mailto|tel):[^"']+)["']/i);
                     if (!hrefMatch) return match;
 
                     const encodedAttrs = attrs.replace(
                         /(href\s*=\s*["'])(?:mailto|tel):[^"']+(?=["'])/i,
-                        (_, prefix) => prefix + encode(hrefMatch[1])
+                        (_, prefix: string) => prefix + encode(hrefMatch[1])
                     );
 
                     return `<a ${encodedAttrs}>${encode(text)}</a>`;
@@ -266,20 +270,10 @@ function createTwigPagesTask(options) {
     /**
      * Renders every Twig page entry under `staticDir` to an HTML file in `outDir`.
      *
-     * For each page the function:
-     * 1. Detects the locale from the file path and loads the matching translations.
-     * 2. Computes relative asset/template paths so the file works at any nesting depth.
-     * 3. Rewrites bare template references (e.g. `extends 'layout.twig'`) to
-     *    paths relative to the page file, since Twig requires resolvable paths.
-     * 4. Compiles and renders the template, strips blank lines, and writes the result.
-     *
      * Throws if `isBuild && useViteAssetsInBuild` is true but the Vite manifest
      * assets could not be loaded (indicating the JS/CSS build step was skipped).
-     *
-     * @param {{ isBuild: boolean, useViteDevServer: boolean, viteDevBase: string }} context
-     * @returns {Promise<void>}
      */
-    async function renderTwigPages(context) {
+    async function renderTwigPages(context: RenderContext): Promise<void> {
         const { isBuild, useViteDevServer, viteDevBase } = context;
         registerTwigFilters();
 
@@ -288,7 +282,9 @@ function createTwigPagesTask(options) {
         const translationsRoot = path.join(projectRoot, translationsDir);
 
         const globalVars = await loadJson(path.join(translationsRoot, 'global.json'));
-        const slugMap = slugMapPath ? await loadJson(path.join(projectRoot, slugMapPath)) : null;
+        const slugMap = slugMapPath
+            ? (await loadJson(path.join(projectRoot, slugMapPath))) as SlugMap
+            : null;
         const viteAssets = await loadViteAssets();
         if (isBuild && useViteAssetsInBuild && (!viteAssets.js || !viteAssets.css)) {
             throw new Error('Vite manifest assets are required for production Twig rendering.');
@@ -312,7 +308,7 @@ function createTwigPagesTask(options) {
                 ? buildLangSwitcherUrls(outputRelative, lang, slugMap, assetPath)
                 : {};
 
-            const data = {
+            const data: Record<string, unknown> = {
                 ...globalVars,
                 ...translations,
                 locale: lang,
@@ -329,7 +325,7 @@ function createTwigPagesTask(options) {
             const relativeTplsPath = path.relative(pageDir, templatesRoot).split(path.sep).join('/');
             const templateContent = (await fs.promises.readFile(pagePath, 'utf8')).replace(
                 /(\{%\s*(?:extends|include|embed|import|from)\s+['"])([^'"]+?\.twig)(['"])/g,
-                (fullMatch, prefix, targetPath, suffix) => {
+                (fullMatch, prefix: string, targetPath: string, suffix: string) => {
                     if (targetPath.startsWith('.') || targetPath.startsWith('/')) {
                         return fullMatch;
                     }
