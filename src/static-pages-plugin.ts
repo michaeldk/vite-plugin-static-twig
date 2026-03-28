@@ -27,6 +27,12 @@ export interface StaticPagesPluginOptions {
     scriptsEntryKey?: string;
     /** Additional Twig filters to register alongside the built-ins. Each entry is `{ name, fn }`. @default [] */
     filters?: TwigFilter[];
+    /**
+     * Delay (ms) before running Twig re-render after `hotUpdate`. Chained updates within this
+     * window collapse to a single render + full reload (filesystems often emit duplicate events
+     * per save). Set to `0` to disable. @default 50
+     */
+    hotUpdateDebounceMs?: number;
 }
 
 interface Tasks {
@@ -53,7 +59,8 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
         locales = ['fr', 'en', 'nl', 'de'],
         defaultLocale = 'fr',
         scriptsEntryKey = 'src/js/scripts.js',
-        filters = []
+        filters = [],
+        hotUpdateDebounceMs = 50
     } = options;
 
     let config: ResolvedConfig;
@@ -67,6 +74,7 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
     let isRendering = false;
     let rerenderQueued = false;
     let fullReloadQueued = false;
+    let hotUpdateDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     /**
      * Instantiates the utility helpers and the Twig render task, bound to the
@@ -234,16 +242,31 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
                     watcher: server.watcher
                 })
             );
+            return () => {
+                if (hotUpdateDebounceTimer !== null) {
+                    clearTimeout(hotUpdateDebounceTimer);
+                    hotUpdateDebounceTimer = null;
+                }
+            };
         },
         hotUpdate({ file }) {
-            if (needsRerender(file)) {
-                // Fire-and-forget: hotUpdate must return synchronously, so we do not
-                // await. The render coalescing logic handles concurrent calls safely.
-                // Return empty array to suppress default HMR; renderTwigPages sends
-                // a full-reload itself once re-rendering is complete.
+            if (!needsRerender(file)) {
+                return undefined;
+            }
+            // Fire-and-forget: hotUpdate must return synchronously, so we do not await.
+            // Return empty array to suppress default HMR; renderTwigPages sends full-reload.
+            if (hotUpdateDebounceMs <= 0) {
                 void renderTwigPages(true);
                 return [];
             }
+            if (hotUpdateDebounceTimer !== null) {
+                clearTimeout(hotUpdateDebounceTimer);
+            }
+            hotUpdateDebounceTimer = setTimeout(() => {
+                hotUpdateDebounceTimer = null;
+                void renderTwigPages(true);
+            }, hotUpdateDebounceMs);
+            return [];
         }
     };
 }

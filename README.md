@@ -67,6 +67,7 @@ All options are optional and fall back to sensible defaults.
 | `defaultLocale` | `string` | `'fr'` | Fallback locale used when none of the `locales` are found in the file path. Also used for pages placed at the root of `staticDir`. |
 | `scriptsEntryKey` | `string` | `'src/js/scripts.js'` | The Vite manifest key for the JS entry point. Used to look up the hashed JS and CSS filenames. |
 | `filters` | `Array<{ name: string, fn: Function }>` | `[]` | Additional Twig filters to register alongside the built-ins. Each entry is passed directly to `Twig.extendFilter(name, fn)`. |
+| `hotUpdateDebounceMs` | `number` | `50` | Delay (ms) before triggering a Twig re-render after a file change in dev mode. Multiple changes within this window are collapsed into a single render and browser reload. Set to `0` to disable debouncing. |
 
 ---
 
@@ -178,6 +179,24 @@ export default {
 ```
 
 Each `fn` receives the filtered value as its first argument and an array of filter arguments as its second, matching the signature expected by `Twig.extendFilter`.
+
+---
+
+## Hot-reload debouncing
+
+File watchers (especially on WSL2 and some Linux configurations) often emit more than one change event for a single file save. Without protection this causes duplicate Twig renders and duplicate browser reloads.
+
+The plugin debounces `hotUpdate` events by default: when a watched file changes, the re-render is delayed by `hotUpdateDebounceMs` (default `50`). Any additional change events arriving within that window are collapsed, resulting in a single render and a single `full-reload` sent to the browser.
+
+If you observe double reloads in dev mode, the default value should already handle it. You can tune it if needed:
+
+```js
+staticPagesPlugin({
+    hotUpdateDebounceMs: 80  // increase if double reloads persist
+})
+```
+
+Set to `0` to disable debouncing entirely (not recommended).
 
 ---
 
