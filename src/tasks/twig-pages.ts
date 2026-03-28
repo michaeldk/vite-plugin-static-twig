@@ -205,7 +205,7 @@ function createTwigPagesTask(options: TwigPagesOptions): { renderTwigPages: (con
             const fileExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'pptx', 'zip'];
             const label = externalLabels[lang] ?? externalLabels['fr'];
 
-            return value.replace(/<a([^>]*)>(.*?)<\/a>/gis, (match, attrs: string, text: string) => {
+            return value.replace(/<a\b([^>]*)>(.*?)<\/a>/gis, (match, attrs: string, text: string) => {
                 const hrefMatch = (attrs as string).match(/href\s*=\s*["']([^"']+)["']/i);
                 if (!hrefMatch) return match;
 
