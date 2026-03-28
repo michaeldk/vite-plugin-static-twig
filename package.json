@@ -37,10 +37,10 @@
     },
     "homepage": "https://github.com/michaeldk/vite-plugin-static-twig#readme",
     "engines": {
-        "node": ">=18"
+        "node": ">=20"
     },
     "dependencies": {
-        "twig": "^1.17.1"
+        "twig": "^2.0.0"
     },
     "peerDependencies": {
         "vite": ">=4"
