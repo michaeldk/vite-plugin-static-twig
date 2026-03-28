@@ -1,0 +1,7 @@
+{% set html %}
+<article class="regression">Article body</article>
+<p><a href="https://example.com/page">External</a></p>
+{% endset %}
+{{ html|external_links('fr')|raw }}
+
+{{ 'plugin'|shout }}
