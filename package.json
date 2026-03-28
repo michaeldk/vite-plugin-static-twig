@@ -1,6 +1,6 @@
 {
     "name": "vite-plugin-static-twig",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "description": "Vite plugin that renders Twig templates into static HTML pages, with dev-server HMR and multi-locale support.",
     "type": "module",
     "main": "./dist/index.js",
