@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import type { ViteDevServer } from 'vite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createDistUrlRewrite } from './dist-url-rewrite.js';
+import { createDistUrlRewrite } from '../src/middleware/dist-url-rewrite.js';
 
 function createMockReq(overrides: Partial<IncomingMessage> & { url?: string; method?: string }): IncomingMessage {
     return {

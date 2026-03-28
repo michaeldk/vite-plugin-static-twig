@@ -2,7 +2,7 @@ import { access, constants, mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/p
 import { tmpdir } from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createSiteUtils } from './site-utils.js';
+import { createSiteUtils } from '../src/site-utils.js';
 
 describe('createSiteUtils', () => {
     let tmpRoot: string;

@@ -3,8 +3,8 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createSiteUtils } from './site-utils.js';
-import { createTwigPagesTask } from './tasks/twig-pages.js';
+import { createSiteUtils } from '../src/site-utils.js';
+import { createTwigPagesTask } from '../src/tasks/twig-pages.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const twigMinimalFixtureRoot = path.join(__dirname, '..', 'test', 'fixtures', 'twig-minimal');

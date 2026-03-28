@@ -4,7 +4,7 @@
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
         "outDir": "dist",
-        "rootDir": "src",
+        "rootDir": ".",
         "declaration": true,
         "declarationMap": true,
         "strict": true,
@@ -12,5 +12,5 @@
         "skipLibCheck": false,
         "typeRoots": ["./src/types", "./node_modules/@types"]
     },
-    "include": ["src"]
+    "include": ["src", "test"]
 }
