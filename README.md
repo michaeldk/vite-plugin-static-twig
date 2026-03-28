@@ -13,7 +13,7 @@ A Vite plugin that compiles [Twig](https://github.com/twigjs/twig.js) templates 
 
 ## Requirements
 
-- **Node.js** >= 18
+- **Node.js** >= 20
 - **Vite** >= 4 (peer dependency)
 
 ---
