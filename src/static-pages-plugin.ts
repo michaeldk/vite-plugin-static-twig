@@ -3,6 +3,7 @@ import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
 import { createSiteUtils } from './site-utils.js';
 import { createTwigPagesTask } from './tasks/twig-pages.js';
 import { createDistUrlRewrite } from './middleware/dist-url-rewrite.js';
+import { collectStaticPagesWatchPaths } from './static-pages-watch-paths.js';
 import type { TwigFilter, RenderContext } from './tasks/twig-pages.js';
 
 export interface StaticPagesPluginOptions {
@@ -123,19 +124,15 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
      * so that `hotUpdate` is triggered when they change. Only called in dev mode.
      */
     async function addWatchFiles(ctx: { addWatchFile: (id: string) => void }): Promise<void> {
-        const staticRoot = path.join(projectRoot, staticDir);
-        const templatesRoot = path.join(projectRoot, templatesDir);
-        const translationsRoot = path.join(projectRoot, translationsDir);
-
-        const [staticFiles, templateFiles, translationFiles] = await Promise.all([
-            tasks!.utils.walkFiles(staticRoot),
-            tasks!.utils.walkFiles(templatesRoot),
-            tasks!.utils.walkFiles(translationsRoot)
-        ]);
-
-        const twigFiles = staticFiles.filter((filePath) => path.extname(filePath).toLowerCase() === '.twig');
-        const extraFiles = slugMapPath ? [path.resolve(projectRoot, slugMapPath)] : [];
-        for (const filePath of [...twigFiles, ...templateFiles, ...translationFiles, ...extraFiles]) {
+        const paths = await collectStaticPagesWatchPaths({
+            projectRoot,
+            staticDir,
+            templatesDir,
+            translationsDir,
+            slugMapPath,
+            walkFiles: tasks!.utils.walkFiles
+        });
+        for (const filePath of paths) {
             ctx.addWatchFile(filePath);
         }
     }
