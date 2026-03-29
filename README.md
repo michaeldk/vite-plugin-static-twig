@@ -197,22 +197,3 @@ staticPagesPlugin({
 ```
 
 Set to `0` to disable debouncing entirely (not recommended).
-
----
-
-## Publishing a new version
-
-Pushing a tag that matches `v*` triggers the GitHub Actions workflow which runs `npm publish` automatically.
-
-```shell
-git tag v1.2.0
-git push origin v1.2.0
-```
-
-The workflow requires an `NPM_TOKEN` secret to be set in the GitHub repository settings (Settings → Secrets → Actions).
-
----
-
-## License
-
-MIT
