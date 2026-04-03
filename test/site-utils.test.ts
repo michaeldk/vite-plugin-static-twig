@@ -32,31 +32,38 @@ describe('createSiteUtils', () => {
             );
         });
 
-        it('skips paths under underscore-prefixed path segments', async () => {
+        it('includes files under underscore-prefixed path segments', async () => {
             await writeFile(path.join(projectRoot, 'visible.txt'), '');
             await mkdir(path.join(projectRoot, '_private'), { recursive: true });
             await writeFile(path.join(projectRoot, '_private', 'secret.txt'), '');
             await mkdir(path.join(projectRoot, 'public'), { recursive: true });
             await writeFile(path.join(projectRoot, 'public', 'ok.txt'), '');
             await mkdir(path.join(projectRoot, 'public', '_partial'), { recursive: true });
-            await writeFile(path.join(projectRoot, 'public', '_partial', 'skip.twig'), '');
+            await writeFile(path.join(projectRoot, 'public', '_partial', 'partial.twig'), '');
 
             const { walkFiles } = createSiteUtils(projectRoot);
             const files = await walkFiles(projectRoot);
 
             expect(files.sort()).toEqual(
-                [path.join(projectRoot, 'visible.txt'), path.join(projectRoot, 'public', 'ok.txt')].sort()
+                [
+                    path.join(projectRoot, 'visible.txt'),
+                    path.join(projectRoot, '_private', 'secret.txt'),
+                    path.join(projectRoot, 'public', 'ok.txt'),
+                    path.join(projectRoot, 'public', '_partial', 'partial.twig')
+                ].sort()
             );
         });
 
-        it('skips files whose name starts with an underscore segment', async () => {
+        it('includes files whose name starts with an underscore', async () => {
             await writeFile(path.join(projectRoot, 'keep.txt'), '');
             await writeFile(path.join(projectRoot, '_draft.txt'), '');
 
             const { walkFiles } = createSiteUtils(projectRoot);
             const files = await walkFiles(projectRoot);
 
-            expect(files).toEqual([path.join(projectRoot, 'keep.txt')]);
+            expect(files.sort()).toEqual(
+                [path.join(projectRoot, 'keep.txt'), path.join(projectRoot, '_draft.txt')].sort()
+            );
         });
     });
 

@@ -11,23 +11,11 @@ export interface SiteUtils {
 
 /**
  * Creates a collection of file-system utility helpers scoped to a given
- * project root. Paths that begin with an underscore-prefixed segment are
- * treated as private and are skipped during directory walks.
+ * project root.
  */
 function createSiteUtils(projectRoot: string): SiteUtils {
     /**
-     * Returns true if any segment of `absPath` (relative to `projectRoot`)
-     * starts with an underscore, indicating the path should be ignored.
-     */
-    function shouldIgnorePath(absPath: string): boolean {
-        const rel = path.relative(projectRoot, absPath);
-        const segments = rel.split(path.sep);
-        return segments.some((segment) => segment.startsWith('_'));
-    }
-
-    /**
-     * Recursively collects all file paths inside `dirPath`, skipping any
-     * entry whose path contains an underscore-prefixed segment.
+     * Recursively collects all file paths inside `dirPath`.
      */
     async function walkFiles(dirPath: string): Promise<string[]> {
         const entries = await fsp.readdir(dirPath, { withFileTypes: true });
@@ -35,9 +23,6 @@ function createSiteUtils(projectRoot: string): SiteUtils {
 
         for (const entry of entries) {
             const entryPath = path.join(dirPath, entry.name);
-            if (shouldIgnorePath(entryPath)) {
-                continue;
-            }
 
             if (entry.isDirectory()) {
                 files.push(...(await walkFiles(entryPath)));
