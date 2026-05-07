@@ -292,7 +292,9 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
             if (!needsRerender(file)) {
                 return undefined;
             }
-            // Return empty array to suppress default HMR; the watcher render path sends full-reload.
+            // Vite's hotUpdate hook is the reliable change signal for existing watched files.
+            // The raw watcher listener above complements this for add/unlink events.
+            scheduleRenderTwigPages();
             return [];
         }
     };

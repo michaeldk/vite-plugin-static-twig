@@ -1,4 +1,6 @@
 import path from 'path';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import type { PluginContext } from 'rollup';
 import type { ResolvedConfig } from 'vite';
@@ -22,7 +24,54 @@ function createServeConfig(root: string): ResolvedConfig {
 type StaticPagesPluginHookSurface = {
     configResolved(config: ResolvedConfig): void;
     buildStart(this: PluginContext): Promise<void>;
+    configureServer(server: FakeDevServer): Promise<() => void>;
+    hotUpdate(ctx: { file: string }): [] | undefined;
 };
+
+interface FakeDevServer {
+    watcher: {
+        add(id: string | string[]): void;
+        on(eventName: string, listener: (...args: string[]) => void): void;
+        off(eventName: string, listener: (...args: string[]) => void): void;
+    };
+    middlewares: {
+        use(middleware: unknown): void;
+    };
+    ws: {
+        sent: unknown[];
+        send(message: unknown): void;
+    };
+}
+
+async function waitFor(assertion: () => Promise<boolean>, timeoutMs = 1000): Promise<void> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+        if (await assertion()) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('Timed out waiting for assertion.');
+}
+
+function createFakeDevServer(): FakeDevServer {
+    return {
+        watcher: {
+            add(): void {},
+            on(): void {},
+            off(): void {}
+        },
+        middlewares: {
+            use(): void {}
+        },
+        ws: {
+            sent: [],
+            send(message: unknown): void {
+                this.sent.push(message);
+            }
+        }
+    };
+}
 
 describe('staticPagesPlugin / addWatchFile deduplication', () => {
     it('registers each watched path at most once when staticDir is under templatesDir', async () => {
@@ -63,5 +112,42 @@ describe('staticPagesPlugin / addWatchFile deduplication', () => {
             walkFiles
         });
         expect([...watched].sort()).toEqual([...expectedPaths.map((p) => path.resolve(p))].sort());
+    });
+
+    it('re-renders from hotUpdate for existing shared Twig templates', async () => {
+        const tmpRoot = await mkdtemp(path.join(tmpdir(), 'static-pages-plugin-'));
+        try {
+            const pagesDir = path.join(tmpRoot, 'src', 'templates', 'pages', 'fr');
+            const templatesDir = path.join(tmpRoot, 'src', 'templates');
+            const translationsDir = path.join(tmpRoot, 'src', 'translations');
+            await mkdir(pagesDir, { recursive: true });
+            await mkdir(translationsDir, { recursive: true });
+            await writeFile(path.join(translationsDir, 'global.json'), '{}');
+            await writeFile(path.join(translationsDir, 'fr.json'), '{}');
+            await writeFile(path.join(templatesDir, '_base.twig'), "{% include '_footer.twig' %}{% block body %}{% endblock %}");
+            await writeFile(path.join(templatesDir, '_footer.twig'), '<footer>Initial footer</footer>');
+            await writeFile(path.join(pagesDir, 'index.twig'), "{% extends '_base.twig' %}{% block body %}Body{% endblock %}");
+
+            const plugin = staticPagesPlugin({
+                useViteAssetsInBuild: false,
+                slugMapPath: null,
+                hotUpdateDebounceMs: 0
+            }) as unknown as StaticPagesPluginHookSurface;
+            plugin.configResolved(createServeConfig(tmpRoot));
+            const server = createFakeDevServer();
+            const cleanup = await plugin.configureServer(server);
+            const htmlPath = path.join(tmpRoot, 'dist', 'fr', 'index.html');
+            expect(await readFile(htmlPath, 'utf8')).toContain('Initial footer');
+
+            await writeFile(path.join(templatesDir, '_footer.twig'), '<footer>Updated footer</footer>');
+            expect(plugin.hotUpdate({ file: path.join(templatesDir, '_footer.twig') })).toEqual([]);
+
+            await waitFor(async () => (await readFile(htmlPath, 'utf8')).includes('Updated footer'));
+            expect(await readFile(htmlPath, 'utf8')).not.toContain('Initial footer');
+            expect(server.ws.sent).toContainEqual({ type: 'full-reload' });
+            cleanup();
+        } finally {
+            await rm(tmpRoot, { recursive: true, force: true });
+        }
     });
 });
