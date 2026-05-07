@@ -275,6 +275,9 @@ function createTwigPagesTask(options: TwigPagesOptions): { renderTwigPages: (con
      */
     async function renderTwigPages(context: RenderContext): Promise<void> {
         const { isBuild, useViteDevServer, viteDevBase } = context;
+        if (!isBuild) {
+            Twig.cache(false);
+        }
         registerTwigFilters();
 
         const staticRoot = path.join(projectRoot, staticDir);

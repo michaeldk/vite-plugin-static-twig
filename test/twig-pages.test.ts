@@ -62,6 +62,49 @@ describe('createTwigPagesTask / renderTwigPages', () => {
         expect(html).not.toMatch(/<article[^>]*target="_blank"/);
     });
 
+    it('re-renders pages with updated underscore-prefixed Twig partials in dev', async () => {
+        const projectRoot = path.join(tmpRoot, 'site');
+        const pagesDir = path.join(projectRoot, 'src', 'templates', 'pages', 'fr');
+        const translationsDir = path.join(projectRoot, 'src', 'translations');
+        await mkdir(pagesDir, { recursive: true });
+        await mkdir(translationsDir, { recursive: true });
+        await writeFile(path.join(translationsDir, 'global.json'), '{}');
+        await writeFile(path.join(translationsDir, 'fr.json'), '{}');
+        await writeFile(path.join(pagesDir, 'index.twig'), "<main>{% include './_teaser.twig' %}</main>");
+        await writeFile(path.join(pagesDir, '_teaser.twig'), '<p>First teaser</p>');
+
+        const { walkFiles, ensureDir, loadJson } = createSiteUtils(projectRoot);
+        const { renderTwigPages } = createTwigPagesTask({
+            srcDir: 'src',
+            staticDir: 'src/templates/pages',
+            templatesDir: 'src/templates',
+            translationsDir: 'src/translations',
+            useViteAssetsInBuild: false,
+            projectRoot,
+            outDir,
+            walkFiles,
+            ensureDir,
+            loadJson
+        });
+
+        const context = {
+            isBuild: false,
+            useViteDevServer: true,
+            viteDevBase: '/'
+        };
+        const htmlPath = path.join(outDir, 'fr', 'index.html');
+
+        await renderTwigPages(context);
+        expect(await readFile(htmlPath, 'utf8')).toContain('First teaser');
+
+        await writeFile(path.join(pagesDir, '_teaser.twig'), '<p>Updated teaser</p>');
+        await renderTwigPages(context);
+
+        const html = await readFile(htmlPath, 'utf8');
+        expect(html).toContain('Updated teaser');
+        expect(html).not.toContain('First teaser');
+    });
+
     it('throws when production build expects Vite manifest assets but manifest is missing', async () => {
         const { walkFiles, ensureDir, loadJson } = createSiteUtils(twigMinimalFixtureRoot);
 

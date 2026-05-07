@@ -146,6 +146,19 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
     }
 
     /**
+     * Returns roots watched directly by the dev server. Watching directories,
+     * rather than only files discovered at startup, lets new partials/includes
+     * trigger a render without restarting Vite.
+     */
+    function getDevServerWatchPaths(): string[] {
+        return [
+            path.resolve(projectRoot, templatesDir),
+            path.resolve(projectRoot, translationsDir),
+            ...(slugMapPath ? [path.resolve(projectRoot, slugMapPath)] : [])
+        ];
+    }
+
+    /**
      * Builds the context object passed to `twigPagesTask.renderTwigPages`,
      * derived from the current Vite command (`serve` vs `build`).
      */
@@ -185,6 +198,23 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
         } finally {
             isRendering = false;
         }
+    }
+
+    /**
+     * Debounces file-system invalidations into a single render and full reload.
+     */
+    function scheduleRenderTwigPages(): void {
+        if (hotUpdateDebounceMs <= 0) {
+            void renderTwigPages(true);
+            return;
+        }
+        if (hotUpdateDebounceTimer !== null) {
+            clearTimeout(hotUpdateDebounceTimer);
+        }
+        hotUpdateDebounceTimer = setTimeout(() => {
+            hotUpdateDebounceTimer = null;
+            void renderTwigPages(true);
+        }, hotUpdateDebounceMs);
     }
 
     /**
@@ -234,6 +264,14 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
         },
         async configureServer(server) {
             devServer = server;
+            server.watcher.add(getDevServerWatchPaths());
+            const handleWatcherEvent = (eventName: string, filePath: string): void => {
+                if (!['add', 'change', 'unlink'].includes(eventName) || !needsRerender(filePath)) {
+                    return;
+                }
+                scheduleRenderTwigPages();
+            };
+            server.watcher.on('all', handleWatcherEvent);
             await renderTwigPages(false);
             server.middlewares.use(
                 createDistUrlRewrite({
@@ -247,25 +285,14 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
                     clearTimeout(hotUpdateDebounceTimer);
                     hotUpdateDebounceTimer = null;
                 }
+                server.watcher.off('all', handleWatcherEvent);
             };
         },
         hotUpdate({ file }) {
             if (!needsRerender(file)) {
                 return undefined;
             }
-            // Fire-and-forget: hotUpdate must return synchronously, so we do not await.
-            // Return empty array to suppress default HMR; renderTwigPages sends full-reload.
-            if (hotUpdateDebounceMs <= 0) {
-                void renderTwigPages(true);
-                return [];
-            }
-            if (hotUpdateDebounceTimer !== null) {
-                clearTimeout(hotUpdateDebounceTimer);
-            }
-            hotUpdateDebounceTimer = setTimeout(() => {
-                hotUpdateDebounceTimer = null;
-                void renderTwigPages(true);
-            }, hotUpdateDebounceMs);
+            // Return empty array to suppress default HMR; the watcher render path sends full-reload.
             return [];
         }
     };

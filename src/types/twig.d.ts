@@ -13,6 +13,7 @@ declare module 'twig' {
 
     interface TwigStatic {
         twig(params: TwigParameters): TwigTemplate;
+        cache(enabled: boolean): void;
         extendFilter(
             name: string,
             fn: (value: unknown, args: unknown[] | false) => unknown
