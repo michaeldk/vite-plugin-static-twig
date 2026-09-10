@@ -18,6 +18,10 @@ declare module 'twig' {
             name: string,
             fn: (value: unknown, args: unknown[] | false) => unknown
         ): void;
+        extendFunction(
+            name: string,
+            fn: (...args: unknown[]) => unknown
+        ): void;
     }
 
     const Twig: TwigStatic;

@@ -23,7 +23,7 @@ describe('createTwigPagesTask / renderTwigPages', () => {
         await rm(tmpRoot, { recursive: true, force: true });
     });
 
-    it('renders fixture pages, applies external_links without touching <article>, and runs custom filters', async () => {
+    it('renders fixture pages, applies external_links without touching <article>, and runs custom filters/functions', async () => {
         const { walkFiles, ensureDir, loadJson } = createSiteUtils(twigMinimalFixtureRoot);
 
         const { renderTwigPages } = createTwigPagesTask({
@@ -42,6 +42,15 @@ describe('createTwigPagesTask / renderTwigPages', () => {
                     name: 'shout',
                     fn: (value: unknown) => (typeof value === 'string' ? value.toUpperCase() : value)
                 }
+            ],
+            functions: [
+                {
+                    name: 'picture',
+                    fn: (...args: unknown[]) => {
+                        const [imagePath = '', alt = '', className = ''] = args;
+                        return `<img src="${imagePath}" alt="${alt}" class="${className}">`;
+                    }
+                }
             ]
         });
 
@@ -58,6 +67,7 @@ describe('createTwigPagesTask / renderTwigPages', () => {
         expect(html).toContain('target="_blank"');
         expect(html).toContain('rel="noopener noreferrer"');
         expect(html).toContain('PLUGIN');
+        expect(html).toContain('<img src="hero.jpg" alt="Alt text" class="hero-image">');
 
         expect(html).not.toMatch(/<article[^>]*target="_blank"/);
     });

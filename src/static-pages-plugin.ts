@@ -4,7 +4,7 @@ import { createSiteUtils } from './site-utils.js';
 import { createTwigPagesTask } from './tasks/twig-pages.js';
 import { createDistUrlRewrite } from './middleware/dist-url-rewrite.js';
 import { collectStaticPagesWatchPaths } from './static-pages-watch-paths.js';
-import type { TwigFilter, RenderContext } from './tasks/twig-pages.js';
+import type { TwigFilter, TwigFunction, RenderContext } from './tasks/twig-pages.js';
 
 export interface StaticPagesPluginOptions {
     /** Root source directory. @default 'src' */
@@ -27,6 +27,8 @@ export interface StaticPagesPluginOptions {
     scriptsEntryKey?: string;
     /** Additional Twig filters to register alongside the built-ins. Each entry is `{ name, fn }`. @default [] */
     filters?: TwigFilter[];
+    /** Additional Twig functions to register alongside the built-ins. Each entry is `{ name, fn }`. @default [] */
+    functions?: TwigFunction[];
     /**
      * Delay (ms) before running Twig re-render after `hotUpdate`. Chained updates within this
      * window collapse to a single render + full reload (filesystems often emit duplicate events
@@ -60,6 +62,7 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
         defaultLocale = 'fr',
         scriptsEntryKey = 'src/js/scripts.js',
         filters = [],
+        functions = [],
         hotUpdateDebounceMs = 50
     } = options;
 
@@ -93,6 +96,7 @@ function staticPagesPlugin(options: StaticPagesPluginOptions = {}): Plugin {
             defaultLocale,
             scriptsEntryKey,
             filters,
+            functions,
             projectRoot,
             outDir: path.resolve(projectRoot, config.build.outDir),
             walkFiles: utils.walkFiles,
