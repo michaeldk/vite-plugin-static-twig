@@ -67,6 +67,7 @@ All options are optional and fall back to sensible defaults.
 | `defaultLocale` | `string` | `'fr'` | Fallback locale used when none of the `locales` are found in the file path. Also used for pages placed at the root of `staticDir`. |
 | `scriptsEntryKey` | `string` | `'src/js/scripts.js'` | The Vite manifest key for the JS entry point. Used to look up the hashed JS and CSS filenames. |
 | `filters` | `Array<{ name: string, fn: Function }>` | `[]` | Additional Twig filters to register alongside the built-ins. Each entry is passed directly to `Twig.extendFilter(name, fn)`. |
+| `functions` | `Array<{ name: string, fn: Function }>` | `[]` | Additional Twig functions to register alongside the built-ins. Each entry is passed directly to `Twig.extendFunction(name, fn)`. |
 | `hotUpdateDebounceMs` | `number` | `50` | Delay (ms) before triggering a Twig re-render after a file change in dev mode. Multiple changes within this window are collapsed into a single render and browser reload. Set to `0` to disable debouncing. |
 
 ---
@@ -179,6 +180,56 @@ export default {
 ```
 
 Each `fn` receives the filtered value as its first argument and an array of filter arguments as its second, matching the signature expected by `Twig.extendFilter`.
+
+---
+
+## Custom Twig functions
+
+Pass a `functions` array to the plugin to register your own functions alongside the built-ins.
+
+```js
+// vite.config.js
+import staticPagesPlugin from 'vite-plugin-static-twig';
+
+export default {
+    plugins: [
+        staticPagesPlugin({
+            functions: [
+                {
+                    name: 'picture',
+                    fn: (imagePath, alt, className = '') =>
+                        `<img src="${imagePath}" alt="${alt}" class="${className}">`
+                }
+            ]
+        })
+    ]
+};
+```
+
+Function definitions can also be imported from a separate file:
+
+```js
+// src/twig-functions.js
+export const functions = [
+    {
+        name: 'picture',
+        fn: (imagePath, alt, className = '') =>
+            `<img src="${imagePath}" alt="${alt}" class="${className}">`
+    }
+];
+```
+
+```js
+// vite.config.js
+import { functions } from './src/twig-functions.js';
+import staticPagesPlugin from 'vite-plugin-static-twig';
+
+export default {
+    plugins: [staticPagesPlugin({ functions })]
+};
+```
+
+Each `fn` receives the Twig call-site arguments positionally, matching the signature expected by `Twig.extendFunction`.
 
 ---
 

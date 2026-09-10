@@ -4,10 +4,16 @@ import Twig from 'twig';
 import type { SiteUtils } from '../site-utils.js';
 
 export type TwigFilterFn = (value: unknown, args: unknown[] | false) => unknown;
+export type TwigFunctionFn = (...args: unknown[]) => unknown;
 
 export interface TwigFilter {
     name: string;
     fn: TwigFilterFn;
+}
+
+export interface TwigFunction {
+    name: string;
+    fn: TwigFunctionFn;
 }
 
 export interface RenderContext {
@@ -27,6 +33,7 @@ export interface TwigPagesOptions {
     defaultLocale?: string;
     scriptsEntryKey?: string;
     filters?: TwigFilter[];
+    functions?: TwigFunction[];
     projectRoot: string;
     outDir: string;
     walkFiles: SiteUtils['walkFiles'];
@@ -64,6 +71,7 @@ function createTwigPagesTask(options: TwigPagesOptions): { renderTwigPages: (con
         defaultLocale = 'fr',
         scriptsEntryKey = 'src/js/scripts.js',
         filters = [],
+        functions = [],
         projectRoot,
         outDir,
         walkFiles,
@@ -264,6 +272,10 @@ function createTwigPagesTask(options: TwigPagesOptions): { renderTwigPages: (con
 
         for (const { name, fn } of filters) {
             Twig.extendFilter(name, fn);
+        }
+
+        for (const { name, fn } of functions) {
+            Twig.extendFunction(name, fn);
         }
     }
 
