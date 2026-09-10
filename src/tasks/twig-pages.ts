@@ -189,14 +189,14 @@ function createTwigPagesTask(options: TwigPagesOptions): { renderTwigPages: (con
     }
 
     /**
-     * Registers custom Twig filters on the shared Twig instance:
+     * Registers built-in and custom Twig filters/functions on the shared Twig instance:
      *
      * - `external_links` — Adds `target="_blank"`, `rel="noopener noreferrer"`,
      *   and a screen-reader label to external URLs and file download links.
      * - `entity_encode` — HTML-entity-encodes `mailto:` and `tel:` link hrefs
      *   and their visible text to deter scraper harvesting.
      *
-     * Safe to call multiple times; Twig silently overwrites existing filters.
+     * Safe to call multiple times; Twig silently overwrites existing filters/functions.
      */
     function registerTwigFilters(): void {
         Twig.extendFilter('external_links', function(value: unknown, args: unknown[] | false) {
